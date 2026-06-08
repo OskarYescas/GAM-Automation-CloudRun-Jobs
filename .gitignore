@@ -1,16 +1,16 @@
-# Ignore GAM credential files (CRITICAL SECURITY)
+# GAM credential files
 client_secrets.json
 oauth2.txt
 oauth2service.json
 
-# Ignore any generated CSV or text outputs from GAM
+# Outputs CSV or TXT
 *.csv
 *.txt
 
-# Ignore hidden GAM directories
+# GAM directory
 .gam/
 
-# OS generated files
+# OS files
 .DS_Store
 .DS_Store?
 ._*

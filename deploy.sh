@@ -1,6 +1,4 @@
 #!/bin/bash
-
-# Exit script if any command fails
 set -e
 
 echo "======================================================"
@@ -12,7 +10,6 @@ echo "securely upload your credentials to Secret Manager,"
 echo "and deploy it to Google Cloud Run Jobs."
 echo ""
 
-# Ask for details interactively
 read -p "Enter your GCP Project ID: " PROJECT_ID
 read -p "Enter the GCP Region (e.g., us-central1): " REGION
 read -p "Enter Artifact Registry Repo Name [gam-automation-repo]: " REPO
@@ -35,8 +32,6 @@ gcloud services enable artifactregistry.googleapis.com \
     cloudscheduler.googleapis.com \
     secretmanager.googleapis.com --quiet
 
-# Google Cloud APIs can take a few seconds to propagate after being enabled.
-echo "Waiting 15 seconds for API enablement to propagate..."
 sleep 15
 
 echo ""
@@ -70,7 +65,7 @@ if [[ ! -f "oauth2.txt" ]] && [[ ! -f "oauth2service.json" ]]; then
     exit 1
 fi
 
-# Create or update client_secrets.json
+# Upload GAM credentials to Secret Manager
 if ! gcloud secrets describe gam-client-secrets --quiet >/dev/null 2>&1; then
     echo "Creating secret 'gam-client-secrets'..."
     gcloud secrets create gam-client-secrets --replication-policy="automatic" --quiet
@@ -80,7 +75,6 @@ else
     gcloud secrets versions add gam-client-secrets --data-file="client_secrets.json" --quiet
 fi
 
-# Create or update oauth2.txt if it exists
 if [[ -f "oauth2.txt" ]]; then
     if ! gcloud secrets describe gam-oauth-token --quiet >/dev/null 2>&1; then
         echo "Creating secret 'gam-oauth-token'..."
@@ -92,7 +86,6 @@ if [[ -f "oauth2.txt" ]]; then
     fi
 fi
 
-# Create or update oauth2service.json if it exists
 if [[ -f "oauth2service.json" ]]; then
     if ! gcloud secrets describe gam-oauth-service --quiet >/dev/null 2>&1; then
         echo "Creating secret 'gam-oauth-service'..."
@@ -104,7 +97,7 @@ if [[ -f "oauth2service.json" ]]; then
     fi
 fi
 
-# Grant compute service account access
+# Apply IAM bindings for compute default SA
 PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)")
 SA_EMAIL="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 echo "Granting secretAccessor role to $SA_EMAIL..."
@@ -127,8 +120,6 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
     --role="roles/logging.logWriter" \
     --quiet >/dev/null
 
-# Wait 10 seconds for IAM roles to propagate
-echo "Waiting 10 seconds for IAM permissions to propagate..."
 sleep 10
 
 echo ""
@@ -142,7 +133,6 @@ echo ""
 echo "------------------------------------------------------"
 echo "4. Creating Cloud Run Job..."
 echo "------------------------------------------------------"
-# Build the secret arguments string dynamically based on what files we have
 SECRET_ARGS="/secret_client/client_secrets.json=gam-client-secrets:latest"
 if [[ -f "oauth2.txt" ]]; then
     SECRET_ARGS="${SECRET_ARGS},/secret_oauth/oauth2.txt=gam-oauth-token:latest"
@@ -151,7 +141,6 @@ if [[ -f "oauth2service.json" ]]; then
     SECRET_ARGS="${SECRET_ARGS},/secret_service/oauth2service.json=gam-oauth-service:latest"
 fi
 
-# Check if job exists to determine if we create or update
 if gcloud run jobs describe "$JOB_NAME" --region "$REGION" --quiet >/dev/null 2>&1; then
     echo "Updating existing Cloud Run Job..."
     gcloud run jobs update "$JOB_NAME" \
