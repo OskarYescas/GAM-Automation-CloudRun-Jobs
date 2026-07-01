@@ -21,3 +21,6 @@ Thumbs.db
 
 #IDE
 gam-auto-license.code-workspace
+
+#Git
+.gitignore
