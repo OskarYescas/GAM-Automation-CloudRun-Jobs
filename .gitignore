@@ -18,3 +18,6 @@ oauth2service.json
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+#IDE
+gam-auto-license.code-workspace
