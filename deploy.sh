@@ -150,6 +150,15 @@ if gcloud iam service-accounts describe "$CLOUDBUILD_SA" --quiet >/dev/null 2>&1
         --quiet >/dev/null 2>&1 || true
 fi
 
+# Allow active user to use gam-runner-sa for builds and deployments
+ACTIVE_USER=$(gcloud config get-value account 2>/dev/null || true)
+if [[ -n "$ACTIVE_USER" ]]; then
+    gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" \
+        --member="user:$ACTIVE_USER" \
+        --role="roles/iam.serviceAccountUser" \
+        --quiet >/dev/null 2>&1 || true
+fi
+
 # Allow Cloud Scheduler service agent to impersonate gam-runner-sa
 SCHEDULER_SA="service-${PROJECT_NUMBER}@gcp-sa-cloudscheduler.iam.gserviceaccount.com"
 gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" \
@@ -170,7 +179,11 @@ if ! gcloud storage buckets describe "gs://${STAGING_BUCKET}" --quiet >/dev/null
 fi
 
 IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${JOB_NAME}-image:latest"
-gcloud builds submit --region="$REGION" --gcs-source-staging-dir="gs://${STAGING_BUCKET}/source" --tag "$IMAGE_URI" . --quiet
+gcloud builds submit \
+    --region="$REGION" \
+    --gcs-source-staging-dir="gs://${STAGING_BUCKET}/source" \
+    --service-account="projects/${PROJECT_ID}/serviceAccounts/${SA_EMAIL}" \
+    --tag "$IMAGE_URI" . --quiet
 
 echo ""
 echo "------------------------------------------------------"
