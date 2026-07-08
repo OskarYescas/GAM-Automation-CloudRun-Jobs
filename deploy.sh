@@ -143,8 +143,14 @@ echo ""
 echo "------------------------------------------------------"
 echo "3. Building and Pushing Docker Image..."
 echo "------------------------------------------------------"
+STAGING_BUCKET="${PROJECT_ID}-cloudbuild-staging"
+if ! gcloud storage buckets describe "gs://${STAGING_BUCKET}" --quiet >/dev/null 2>&1; then
+    echo "Creating regional Cloud Build staging bucket in $REGION..."
+    gcloud storage buckets create "gs://${STAGING_BUCKET}" --location="$REGION" --quiet
+fi
+
 IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${JOB_NAME}-image:latest"
-gcloud builds submit --region="$REGION" --tag "$IMAGE_URI" . --quiet
+gcloud builds submit --region="$REGION" --gcs-source-staging-dir="gs://${STAGING_BUCKET}/source" --tag "$IMAGE_URI" . --quiet
 
 echo ""
 echo "------------------------------------------------------"
