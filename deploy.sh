@@ -182,6 +182,8 @@ IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${JOB_NAME}-image:late
 gcloud builds submit \
     --region="$REGION" \
     --gcs-source-staging-dir="gs://${STAGING_BUCKET}/source" \
+    --gcs-log-dir="gs://${STAGING_BUCKET}/logs" \
+    --logging=cloud-logging-only \
     --service-account="projects/${PROJECT_ID}/serviceAccounts/${SA_EMAIL}" \
     --tag "$IMAGE_URI" . --quiet
 
