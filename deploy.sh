@@ -144,7 +144,7 @@ echo "------------------------------------------------------"
 echo "3. Building and Pushing Docker Image..."
 echo "------------------------------------------------------"
 IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${JOB_NAME}-image:latest"
-gcloud builds submit --tag "$IMAGE_URI" . --quiet
+gcloud builds submit --region="$REGION" --tag "$IMAGE_URI" . --quiet
 
 echo ""
 echo "------------------------------------------------------"
