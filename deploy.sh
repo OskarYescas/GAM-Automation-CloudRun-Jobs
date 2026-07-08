@@ -98,16 +98,32 @@ if [[ -f "oauth2service.json" ]]; then
     fi
 fi
 
-# Apply IAM bindings for compute default SA
-PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)")
-SA_EMAIL="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+# Provision Service Account for GAM Automation
+SA_NAME="gam-runner-sa"
+SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
+
+if ! gcloud iam service-accounts describe "$SA_EMAIL" --quiet >/dev/null 2>&1; then
+    echo "Creating dedicated Service Account '$SA_NAME'..."
+    gcloud iam service-accounts create "$SA_NAME" \
+        --display-name="GAM Runner Service Account" \
+        --quiet
+fi
+
 echo "Granting secretAccessor role to $SA_EMAIL..."
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
     --member="serviceAccount:$SA_EMAIL" \
     --role="roles/secretmanager.secretAccessor" \
     --quiet >/dev/null
 
-echo "Granting Cloud Build necessary permissions to $SA_EMAIL..."
+echo "Granting Cloud Run and Cloud Build necessary permissions to $SA_EMAIL..."
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:$SA_EMAIL" \
+    --role="roles/run.developer" \
+    --quiet >/dev/null
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:$SA_EMAIL" \
+    --role="roles/run.invoker" \
+    --quiet >/dev/null
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
     --member="serviceAccount:$SA_EMAIL" \
     --role="roles/cloudbuild.builds.builder" \
@@ -147,6 +163,7 @@ if gcloud run jobs describe "$JOB_NAME" --region "$REGION" --quiet >/dev/null 2>
     gcloud run jobs update "$JOB_NAME" \
       --image "$IMAGE_URI" \
       --region "$REGION" \
+      --service-account "$SA_EMAIL" \
       --task-timeout 10m \
       --max-retries 0 \
       --set-secrets="$SECRET_ARGS" \
@@ -156,6 +173,7 @@ else
     gcloud run jobs create "$JOB_NAME" \
       --image "$IMAGE_URI" \
       --region "$REGION" \
+      --service-account "$SA_EMAIL" \
       --task-timeout 10m \
       --max-retries 0 \
       --set-secrets="$SECRET_ARGS" \
