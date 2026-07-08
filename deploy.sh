@@ -136,6 +136,26 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
     --member="serviceAccount:$SA_EMAIL" \
     --role="roles/logging.logWriter" \
     --quiet >/dev/null
+# Grant Cloud Build SA permissions if auto-grants are disabled in org
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)")
+CLOUDBUILD_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
+if gcloud iam service-accounts describe "$CLOUDBUILD_SA" --quiet >/dev/null 2>&1; then
+    gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+        --member="serviceAccount:$CLOUDBUILD_SA" \
+        --role="roles/artifactregistry.writer" \
+        --quiet >/dev/null 2>&1 || true
+    gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+        --member="serviceAccount:$CLOUDBUILD_SA" \
+        --role="roles/storage.objectUser" \
+        --quiet >/dev/null 2>&1 || true
+fi
+
+# Allow Cloud Scheduler service agent to impersonate gam-runner-sa
+SCHEDULER_SA="service-${PROJECT_NUMBER}@gcp-sa-cloudscheduler.iam.gserviceaccount.com"
+gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" \
+    --member="serviceAccount:$SCHEDULER_SA" \
+    --role="roles/iam.serviceAccountTokenCreator" \
+    --quiet >/dev/null 2>&1 || true
 
 sleep 10
 
@@ -146,7 +166,7 @@ echo "------------------------------------------------------"
 STAGING_BUCKET="${PROJECT_ID}-cloudbuild-staging"
 if ! gcloud storage buckets describe "gs://${STAGING_BUCKET}" --quiet >/dev/null 2>&1; then
     echo "Creating regional Cloud Build staging bucket in $REGION..."
-    gcloud storage buckets create "gs://${STAGING_BUCKET}" --location="$REGION" --quiet
+    gcloud storage buckets create "gs://${STAGING_BUCKET}" --location="$REGION" --uniform-bucket-level-access --quiet
 fi
 
 IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${JOB_NAME}-image:latest"
