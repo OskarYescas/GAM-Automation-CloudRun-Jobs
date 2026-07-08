@@ -11,7 +11,8 @@ echo "and deploy it to Google Cloud Run Jobs."
 echo ""
 
 read -p "Enter your GCP Project ID: " PROJECT_ID
-read -p "Enter the GCP Region (e.g., us-central1): " REGION
+read -p "Enter the GCP Region [us-central1]: " REGION
+REGION=${REGION:-us-central1}
 read -p "Enter Artifact Registry Repo Name [gam-automation-repo]: " REPO
 REPO=${REPO:-gam-automation-repo}
 read -p "Enter Cloud Run Job Name [gam-daily-job]: " JOB_NAME
@@ -67,8 +68,8 @@ fi
 
 # Upload GAM credentials to Secret Manager
 if ! gcloud secrets describe gam-client-secrets --quiet >/dev/null 2>&1; then
-    echo "Creating secret 'gam-client-secrets'..."
-    gcloud secrets create gam-client-secrets --replication-policy="automatic" --quiet
+    echo "Creating secret 'gam-client-secrets' in $REGION..."
+    gcloud secrets create gam-client-secrets --replication-policy="user-managed" --locations="$REGION" --quiet
     gcloud secrets versions add gam-client-secrets --data-file="client_secrets.json" --quiet
 else
     echo "Secret 'gam-client-secrets' already exists. Updating with local file..."
@@ -77,8 +78,8 @@ fi
 
 if [[ -f "oauth2.txt" ]]; then
     if ! gcloud secrets describe gam-oauth-token --quiet >/dev/null 2>&1; then
-        echo "Creating secret 'gam-oauth-token'..."
-        gcloud secrets create gam-oauth-token --replication-policy="automatic" --quiet
+        echo "Creating secret 'gam-oauth-token' in $REGION..."
+        gcloud secrets create gam-oauth-token --replication-policy="user-managed" --locations="$REGION" --quiet
         gcloud secrets versions add gam-oauth-token --data-file="oauth2.txt" --quiet
     else
         echo "Secret 'gam-oauth-token' already exists. Updating with local file..."
@@ -88,8 +89,8 @@ fi
 
 if [[ -f "oauth2service.json" ]]; then
     if ! gcloud secrets describe gam-oauth-service --quiet >/dev/null 2>&1; then
-        echo "Creating secret 'gam-oauth-service'..."
-        gcloud secrets create gam-oauth-service --replication-policy="automatic" --quiet
+        echo "Creating secret 'gam-oauth-service' in $REGION..."
+        gcloud secrets create gam-oauth-service --replication-policy="user-managed" --locations="$REGION" --quiet
         gcloud secrets versions add gam-oauth-service --data-file="oauth2service.json" --quiet
     else
         echo "Secret 'gam-oauth-service' already exists. Updating with local file..."
