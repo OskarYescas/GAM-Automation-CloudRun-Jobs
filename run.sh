@@ -5,6 +5,7 @@ echo "Starting GAM Automation Job..."
 
 # Stage credentials from memory mounts to GAM's expected path
 echo "Loading credentials from Secret Manager..."
+mkdir -p /root/.gam
 cp /secret_client/client_secrets.json /root/.gam/client_secrets.json
 
 if [ -f /secret_oauth/oauth2.txt ]; then

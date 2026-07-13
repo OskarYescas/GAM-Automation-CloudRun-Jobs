@@ -3,28 +3,68 @@
 > [!IMPORTANT]
 > **IMPORTANT DISCLAIMER:** This solution offers a recommended approach that is not exhaustive and is not intended as a final enterprise-ready solution. Customers should consult their Dev, security, and networking teams before deployment.
 
-This guide provides step-by-step instructions for taking an existing, manually run GAM command from Cloud Shell and automating it using Google Cloud Run Jobs and Cloud Scheduler.
+This guide provides step-by-step instructions for taking an existing, manually run GAM (Google Apps Manager) command and automating it securely using Google Cloud Run Jobs and Cloud Scheduler.
 
-## How the Deployment Script (`deploy.sh`) Works
-The provided `deploy.sh` script fully automates the creation of a secure, serverless architecture in Google Cloud. When executed, it performs the following steps:
+---
+
+## The High-Level Concept (In Plain English)
+Think of this automation as a secure digital worker that performs your daily Google Workspace tasks automatically:
+1. **Wakes up** on a schedule (controlled by **Cloud Scheduler**, which acts like a recurring alarm clock).
+2. **Steps into a temporary workspace** (a **Cloud Run Job** container) that exists only for the duration of the task.
+3. **Retrieves keys securely from a vault** (**Secret Manager**) to authenticate, performs the work, and immediately discards the keys.
+4. **Executes the command** (your customized GAM command in [run.sh]).
+5. **Shuts down completely**, ensuring no persistent resources are left running and no credentials remain exposed.
+
+---
+
+## Architecture Diagram
+
+```mermaid
+graph TD
+    Developer["1. Developer (runs deploy.sh)"] -->|Deploys Infrastructure| GCP
+    
+    subgraph GCP ["Google Cloud Platform"]
+        Scheduler["2. Cloud Scheduler (Cron)"] -->|Triggers| Job["3. Cloud Run Job"]
+        SecretVault["4. Secret Manager"] -->|Mounts Secrets In-Memory| Job
+        SA["Dedicated Service Account"] -.->|Secures Job Identity| Job
+    end
+    
+    Job -->|5. Executes GAM Commands| Workspace["6. Google Workspace APIs"]
+
+    classDef gcpStyle fill:#4285F4,stroke:#333,stroke-width:1px,color:#fff;
+    classDef extStyle fill:#F4B400,stroke:#333,stroke-width:1px,color:#000;
+    class Scheduler,Job,SecretVault,SA gcpStyle;
+    class Workspace,Developer extStyle;
+```
+
+---
+
+## How the Deployment Script ([deploy.sh](deploy.sh)) Works
+The provided [deploy.sh](deploy.sh) script fully automates the creation of this secure architecture in Google Cloud:
+
 1. **Enables APIs:** Turns on all required Google Cloud APIs (Cloud Run, Cloud Build, Secret Manager, Cloud Scheduler, Artifact Registry).
-2. **Creates Secrets:** Uploads your local GAM credential files into Google Cloud Secret Manager so they are never hardcoded in the codebase.
-3. **Provisions IAM Permissions:** Grants the necessary `secretAccessor` and build permissions to the compute service account.
+2. **Creates Secrets:** Uploads your local GAM credential files into Google Cloud Secret Manager so they are never stored in plain text or baked into the container.
+3. **Provisions IAM Permissions:** Creates a dedicated Service Account (`gam-runner-sa`) and grants it the necessary IAM roles (`secretAccessor`, logging, build/run permissions) to adhere to the Principle of Least Privilege.
 4. **Builds the Container:** Uses Cloud Build to package the GAM installation into a Docker image and pushes it to Artifact Registry.
 5. **Deploys Cloud Run:** Creates or updates a Cloud Run Job, configuring it to securely mount the Secret Manager credentials into the container's memory at runtime.
 6. **Schedules the Job:** Creates a Cloud Scheduler HTTP trigger to automatically wake up the Cloud Run Job at a recurring schedule (e.g., every morning).
 
-## What You Should Edit
-Before deploying, you must customize a few lines of code to fit your specific use case.
+---
 
-### 1. Customize Your GAM Command (`run.sh`)
-Open the `run.sh` file. This script is what will be executed **inside** the cloud container every day.
-- Locate the line containing `gam info domain` at the bottom.
-- Replace this with the exact command your team runs manually every day (e.g., `gam print users > users.csv`, or your license assignment script).
+## Customization Guide (What You Should Edit)
 
-### 2. Configure the Execution Timeout (`deploy.sh`)
+Before deploying, customize these files to fit your specific use case:
+
+### 1. Customize Your GAM Command ([run.sh](run.sh))
+Open [run.sh](run.sh) and locate the line:
+```bash
+gam info domain
+```
+Replace this with the exact command your team runs manually (e.g., `gam print users > users.csv`, or your license assignment scripts).
+
+### 2. Configure the Execution Timeout ([deploy.sh](deploy.sh))
 To protect against infinite loops consuming your cloud budget, the Cloud Run Job is configured with a strict execution time limit.
-- Open `deploy.sh`.
+- Open [deploy.sh](deploy.sh).
 - Locate the `--task-timeout 10m` parameter in the Cloud Run deployment command.
 - If your GAM script takes longer than 10 minutes to run, increase this limit (e.g., `30m` or `1h`).
 
@@ -32,27 +72,39 @@ To protect against infinite loops consuming your cloud budget, the Cloud Run Job
 
 ## Prerequisites
 - A Google Cloud Project with Billing enabled.
-- The **Cloud Run Admin**, **Cloud Build Editor**, **Cloud Scheduler Admin**, and **Secret Manager Admin** roles assigned to your user account.
-- Your existing working GAM setup in Cloud Shell.
-- **Execution Environment:** You can run this deployment process directly in **Google Cloud Shell** (by uploading this folder to it) OR on your **local machine**, provided you have the Google Cloud CLI (`gcloud`) installed and authenticated. 
-- **Automated CLI:** All required `gcloud` infrastructure commands have been fully encapsulated and automated inside the `deploy.sh` script, so you do not need to run them manually.
+- Google Cloud CLI (`gcloud`) installed and authenticated on your local machine.
+- Your existing working GAM credentials (usually stored in `~/.gam` on the machine where GAM is currently installed).
+- The following GCP IAM roles assigned to your user account to run the deployment:
+  * **Cloud Run Admin**
+  * **Cloud Build Editor**
+  * **Cloud Scheduler Admin**
+  * **Secret Manager Admin**
+  * **Service Account Admin** (to create the dedicated SA)
 
 ---
 
-## Step 1: Extract Existing GAM Credentials
-Since GAM is already working in your Cloud Shell, we do not need to re-authorize GAM or create a new GCP project for it. We will simply use your existing credentials.
+## Step-by-Step Setup Guide
 
-You will need to locate up to three files depending on your GAM setup (usually in `~/.gam`):
-1. `client_secrets.json`: The API project credentials.
-2. `oauth2.txt`: The Client authorization tokens.
-3. `oauth2service.json`: The Service Account authorization tokens.
+### Step 1: Initialize Your Google Cloud CLI
+If running from your local machine, open your terminal and authenticate with GCP:
+```bash
+gcloud auth login
+gcloud auth application-default login
+```
 
-**Action:** Download these files from your Cloud Shell to your local machine, and place them securely in the same directory as this guide. 
-*(Note: These files will **not** be baked into the Docker image. The deployment script will securely upload them to Google Cloud Secret Manager).*
+### Step 2: Extract Existing GAM Credentials
+We will use your existing GAM authorization credentials instead of creating new ones. Locate up to three files in your local GAM folder (usually located at `~/.gam` on macOS/Linux or `%USERPROFILE%\.gam` on Windows):
+1. `client_secrets.json` (Required: API project credentials)
+2. `oauth2.txt` (Optional: Client authorization tokens)
+3. `oauth2service.json` (Optional: Service Account authorization tokens)
 
----
+**Action:** Copy these files into the same directory as this guide. They will **not** be baked into the Docker image; the deployment script uploads them directly to GCP Secret Manager.
 
-## Step 2: Deploy the Automation
+> [!TIP]
+> **Locating files in Google Cloud Shell:**
+> If you run GAM in Google Cloud Shell, you can download files by opening Cloud Shell, clicking the **three dots menu** (top-right of the terminal), choosing **Download File**, and entering the absolute file path (e.g., `/home/<your-username>/.gam/client_secrets.json`).
+
+### Step 3: Run the Deployment Automation
 1. Open your terminal in this directory.
 2. Make the deployment script executable:
    ```bash
@@ -62,14 +114,38 @@ You will need to locate up to three files depending on your GAM setup (usually i
    ```bash
    ./deploy.sh
    ```
-4. Follow the on-screen prompts. The script will ask for your Project ID, preferred region, and scheduling details.
+4. Follow the interactive prompts:
+   - **GCP Project ID**: The ID of your Google Cloud project.
+   - **GCP Region**: Press Enter to default to `us-central1` or type another region.
+   - **Artifact Registry Repo Name**: Press Enter to default to `gam-automation-repo`.
+   - **Cloud Run Job Name**: Press Enter to default to `gam-daily-job`.
+   - **Scheduling**: Type `y` if you want to configure automatic scheduling, then enter a standard Cron expression (e.g., `0 8 * * *` for 8:00 AM daily) and a name for the scheduler job.
 
 ---
 
-## Architecture Security
-- **Secret Manager:** Your credentials are automatically uploaded to Google Cloud Secret Manager and securely mounted into the Cloud Run Job at runtime. They are never stored in the Docker image.
-- **In-Memory Execution:** The secrets are mounted into an ephemeral, temporary folder inside the container and are destroyed the millisecond the execution finishes.
-- **Enterprise-Grade Tip:** By default, this setup uses the Compute Engine Default Service Account. For ultimate enterprise-grade security and adherence to the Principle of Least Privilege, you can manually create a Custom Service Account specifically for this automation, grant it only the `secretAccessor` role, and specify it using `--service-account` in the `gcloud run jobs create` command.
+## How to Test and Verify
+
+Once deployment is complete, you can manually trigger and test your job to verify it functions as expected.
+
+### 1. Execute the Job Manually via CLI
+Run the following command (replacing details if you customized names/regions):
+```bash
+gcloud run jobs execute gam-daily-job --region us-central1
+```
+
+### 2. View Execution Logs
+You can monitor the output and logs of your execution directly in the Google Cloud Console:
+1. Open the [Google Cloud Console](https://console.cloud.google.com/).
+2. Navigate to **Cloud Run** -> **Jobs**.
+3. Click on your job name (`gam-daily-job`).
+4. Click on the **History** tab and select the latest execution to view its output log (which will display the outputs of `gam version`, your command, and debug messages).
+
+---
+
+## Security & Architecture Details
+- **Secret Manager Mounting:** Credentials are never packaged inside the container image. They are stored inside Google Cloud Secret Manager and mounted as a temporary volume at runtime.
+- **In-Memory Execution:** The mounted volume is ephemeral and exists entirely in-memory (`tmpfs`). When the job completes, this memory is instantly freed, leaving no footprint.
+- **Dedicated Service Account:** The job runs under the identity of `gam-runner-sa` rather than the default compute service account. This dedicated service account has only the permissions required to write logs, download secrets, and execute the run job.
 
 ---
 
@@ -80,4 +156,4 @@ You will need to locate up to three files depending on your GAM setup (usually i
 
 Google Cloud Run Jobs features a generous perpetual free tier that includes **180,000 vCPU-seconds** and **360,000 GB-seconds** per month.
 
-Since this architecture provisions exactly 1 vCPU and 512MB of RAM, the primary bottleneck is the vCPU limit. Mathematically, 180,000 seconds per month allows your job to execute for approximately **6,000 seconds (1 hour and 40 minutes) every single day** without incurring any compute charges. As long as your GAM command takes less than 1 hour and 40 minutes to finish daily, your compute cost will be $0.00.
+Since this architecture defaults to 1 vCPU and 512MB of RAM, the primary bottleneck is the vCPU limit. Mathematically, 180,000 seconds per month allows your job to execute for approximately **6,000 seconds (1 hour and 40 minutes) every single day** without incurring any compute charges. As long as your GAM command takes less than 1 hour and 40 minutes to finish daily, your compute cost will be $0.00.
