@@ -152,8 +152,20 @@ You can monitor the output and logs of your execution directly in the Google Clo
 ## Cost & Free Tier Analysis
 
 > [!TIP]
-> **IMPORTANT COST DISCLAIMER:** While this automation is designed to fit entirely within Google Cloud's free tier, you should always oversee your billing dashboard and consult with your Cloud FinOps or Dev team to monitor usage.
+> **IMPORTANT COST DISCLAIMER:** While this automation is engineered to fit entirely within Google Cloud's individual service free tiers ($0.00 expected monthly cost for standalone workloads), you should always oversee your billing dashboard and consult with your Cloud FinOps or Dev team to monitor overall organizational account allowances.
 
+### 1. Cloud Run Jobs (Compute)
 Google Cloud Run Jobs features a generous perpetual free tier that includes **180,000 vCPU-seconds** and **360,000 GB-seconds** per month.
 
-Since this architecture defaults to 1 vCPU and 512MB of RAM, the primary bottleneck is the vCPU limit. Mathematically, 180,000 seconds per month allows your job to execute for approximately **6,000 seconds (1 hour and 40 minutes) every single day** without incurring any compute charges. As long as your GAM command takes less than 1 hour and 40 minutes to finish daily, your compute cost will be $0.00.
+Since this architecture defaults to **1 vCPU and 512MB of RAM**, your main constraint is the vCPU allowance. Mathematically, 180,000 seconds per month allows your job to execute for approximately **6,000 seconds (1 hour and 40 minutes) every single day** without incurring any compute charges. As long as your GAM command finishes well inside this daily budget, your compute run cost will remain exactly **$0.00**.
+
+### 2. Shared Billing Account & Micro-Charges
+If your Google Cloud Project shares a single **Cloud Billing Account** with several other active organizational projects, note that GCP Free Tier limits (`180,000 vCPU-seconds`, `6 Secret Manager versions`, and `3 Cloud Scheduler jobs`) apply **across all combined projects on the Billing Account**, not per individual project. 
+
+If those free allowances are consumed by other enterprise projects, minor monthly charges (typically a few cents) can accrue across the supporting infrastructure:
+
+- **Secret Manager (Version Accumulation):** Every time you re-run [deploy.sh](deploy.sh) during updates or troubleshooting, new active payload versions (`version 2`, `version 3`, etc.) are generated for your 3 GAM secret credentials while older versions stay active in the vault. If your billing account exceeds its 6 free versions, each active stored secret version incurs **$0.06 per month**.
+  * **Cost Optimization Tip:** Periodically destroy older, historical secret versions in the Cloud Console or CLI, keeping only the current `latest` version for `gam-client-secrets`, `gam-oauth-token`, and `gam-oauth-service`.
+- **Artifact Registry & Cloud Build Storage:** When images are compiled and pushed (`gcloud builds submit`), historical container layers (`gam-automation-repo`) and build tarballs inside your regional Cloud Build GCS staging bucket persist over time, incurring nominal storage fees (`~$0.10/GB per month` above free tiers).
+  * **Cost Optimization Tip:** Remove outdated Docker image tags from Artifact Registry and clear intermediate logs from the `gs://[PROJECT_ID]-cloudbuild-staging` bucket.
+- **Cloud Scheduler Trigger:** Google Cloud provides **3 free recurring cron schedules per billing account every month**. Any active cron scheduler triggers created beyond the 3rd billing account job are charged a flat rate of **$0.10 per month**.
